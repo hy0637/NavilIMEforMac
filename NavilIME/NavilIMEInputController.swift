@@ -13,39 +13,26 @@ open class NavilIMEInputController: IMKInputController {
     let shift_key_code:String = "ASDFHGZXCV\tBQWERYT!@#$^%+(&_*)}OU{IP\tLJ\"K:|<?NM>\t ~"
     
     var hangul:Hangul!
+    // 멀티키 시퀀스 감지 카운터 (C-x p p 등 처리)
+    var commandKeyCount: Int = 0
     
     override open func activateServer(_ sender: Any!) {
         super.activateServer(sender)
-        
-        PrintLog.shared.Log(log: "Server Activated")
+        commandKeyCount = 0
         self.hangul = Hangul()
         self.hangul.Start(type: HangulMenu.shared.selected_keyboard)
         
-        if OptHandler.shared.emacs_eng_mode {
-            if let client = sender as? IMKTextInput,
-               let bundleID = client.bundleIdentifier() {
-                PrintLog.shared.Log(log: "App activated: \(bundleID)")
-                let engModeApps = ["org.gnu.Emacs", "com.runningwithcrayons.Alfred"]
-                if engModeApps.contains(bundleID) {
-                    HangulMenu.shared.self_eng_mode = true
-                    PrintLog.shared.Log(log: "Forced English mode for: \(bundleID)")
-                } else {
-                    HangulMenu.shared.self_eng_mode = false
-                }
-            }
-        }
+
     }
 
     override open func deactivateServer(_ sender: Any!) {
         super.deactivateServer(sender)
-        PrintLog.shared.Log(log: "Server deactivating")
         self.hangul.Flush()
         self.update_display(client: sender)
         self.hangul.Stop()
     }
     
-    // hangul이 없거나 automata가 nil이면 복구한다.
-    // macOS가 activateServer 없이 handle을 호출하는 경우 대비.
+    // macOS가 activateServer 없이 handle을 호출하는 경우 대비
     func ensureHangulReady() {
         if self.hangul == nil {
             self.hangul = Hangul()
@@ -58,6 +45,7 @@ open class NavilIMEInputController: IMKInputController {
     override open func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
         self.ensureHangulReady()
         if OptHandler.shared.Is_han_eng_changed(keycode: event.keyCode, modi: event.modifierFlags) {
+            commandKeyCount = 0
             self.hangul.ToggleSuspend()
             self.commitComposition(sender)
             return true
@@ -65,13 +53,13 @@ open class NavilIMEInputController: IMKInputController {
 
         if HanjaController.shared.isVisible {
             switch event.keyCode {
-            case 0x7B, 0x7C, 0x7D, 0x7E: // 화살표키
+            case 0x7B, 0x7C, 0x7D, 0x7E:
                 HanjaController.shared.handleKey(event: event)
                 return true
-            case 0x24, 0x4C: // Enter, Return
+            case 0x24, 0x4C:
                 HanjaController.shared.handleKey(event: event)
                 return true
-            case 0x35: // ESC
+            case 0x35:
                 HanjaController.shared.hide()
                 return true
             default:
@@ -87,10 +75,27 @@ open class NavilIMEInputController: IMKInputController {
                 self.commitComposition(sender)
             }
             return eaten
+        case .flagsChanged:
+            // 수식키(Ctrl, Cmd, Option) 눌릴 때 멀티키 시퀀스 카운트 증가
+            if let client = sender as? IMKTextInput,
+               let bundleID = client.bundleIdentifier(),
+               bundleID == "org.gnu.Emacs" {
+                let flag = event.modifierFlags
+                if flag.contains(.control) || flag.contains(.command) || flag.contains(.option) {
+                    if commandKeyCount == 0 {
+                        // 처음 수식키 누를 때 조합 중인 글자 확정
+                        self.hangul.Flush()
+                        self.update_display(client: sender)
+                    }
+                    commandKeyCount += 1
+                }
+            }
+            return false
         case .leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .rightMouseUp, .rightMouseDragged:
+            commandKeyCount = 0
             self.commitComposition(sender)
         default:
-            PrintLog.shared.Log(log: "unhandled event keycode=\(event.keyCode) modi=\(event.modifierFlags.rawValue)")
+            break
         }
         return false
     }
@@ -106,24 +111,33 @@ open class NavilIMEInputController: IMKInputController {
         }
         
         if flag.contains(.command) || flag.contains(.option) || flag.contains(.control) {
-            PrintLog.shared.Log(log: "Modikey - \(keycode) with \(flag.rawValue)")
-            if OptHandler.shared.emacs_eng_mode,
-               let client = client as? IMKTextInput,
+            if let client = client as? IMKTextInput,
                let bundleID = client.bundleIdentifier(),
                bundleID == "org.gnu.Emacs" {
-                if HangulMenu.shared.self_eng_mode == false {
-                    HangulMenu.shared.self_eng_mode = true
+                if commandKeyCount == 0 {
                     self.hangul.Flush()
-                    PrintLog.shared.Log(log: "Auto switched to English for Emacs shortcut")
+                    self.update_display(client: client)
                 }
+                commandKeyCount += 1
             }
             return false
+        }
+        
+        // commandKeyCount > 0 이면 멀티키 시퀀스 진행 중 → 한글 처리 안 함
+        if commandKeyCount > 0 {
+            if let client = client as? IMKTextInput,
+               let bundleID = client.bundleIdentifier(),
+               bundleID == "org.gnu.Emacs" {
+                commandKeyCount += 1
+                return false
+            } else {
+                commandKeyCount = 0
+            }
         }
         
         let enter_return = 0x24
         let tab = 0x30
         if keycode == enter_return || keycode == tab {
-            PrintLog.shared.Log(log: "Enter or Tab")
             self.hangul.Flush()
             self.update_display(client: client)
             return false
@@ -131,7 +145,6 @@ open class NavilIMEInputController: IMKInputController {
         
         let backspace = 0x33
         if keycode == backspace {
-            PrintLog.shared.Log(log: "Backspace")
             let remain = self.hangul.Backspace()
             if remain == true {
                 self.update_display(client: client, backspace: true)
@@ -139,9 +152,8 @@ open class NavilIMEInputController: IMKInputController {
             return remain
         }
 
-        // F9 → 한자/기호 변환 (토글)
+        // F9 → 한자/기호 변환
         if event.keyCode == 0x65 {
-            // Lazy 초기화 - 처음 F9 누를 때만 setup
             if !HanjaController.shared.isReady,
                let delegate = NSApp.delegate as? AppDelegate {
                 HanjaController.shared.setup(server: delegate.server)
@@ -150,10 +162,8 @@ open class NavilIMEInputController: IMKInputController {
                 HanjaController.shared.hide()
                 return true
             }
-            PrintLog.shared.Log(log: "F9 - Hanja conversion")
             let imkClient = client as! IMKTextInput
             let preeditStr = self.hangul.currentPreedit
-            PrintLog.shared.Log(log: "F9 - currentPreedit: \(preeditStr)")
 
             let targetStr: String
             let preeditMode: Bool
@@ -167,9 +177,7 @@ open class NavilIMEInputController: IMKInputController {
                 preeditMode = false
             }
 
-            PrintLog.shared.Log(log: "F9 - target: \(targetStr) preeditMode: \(preeditMode)")
             guard !targetStr.isEmpty, let scalar = targetStr.unicodeScalars.last else {
-                PrintLog.shared.Log(log: "F9 - no target char")
                 return false
             }
             return HanjaController.shared.handleScalar(
@@ -179,7 +187,6 @@ open class NavilIMEInputController: IMKInputController {
         }
         
         if keycode >= self.key_code.count {
-            PrintLog.shared.Log(log: "Bypassd keycode: \(keycode) >= \(self.key_code.count)")
             self.hangul.Flush()
             self.update_display(client: client)
             return false
@@ -192,9 +199,9 @@ open class NavilIMEInputController: IMKInputController {
             ascii = self.shift_key_code[ascii_idx]
         }
         
+        commandKeyCount = 0
         let is_hangul:Bool = self.hangul.Process(ascii: String(ascii))
         if is_hangul == false {
-            PrintLog.shared.Log(log: "Not Hangul: \(ascii)")
             self.hangul.Flush()
             var extra:String = String(ascii)
             if let etc = hangul.Additional(ascii: String(ascii)) {
@@ -213,29 +220,22 @@ open class NavilIMEInputController: IMKInputController {
         var commited:String = String(utf16CodeUnits:commit_unicode, count: commit_unicode.count)
         let preediting:String = String(utf16CodeUnits: preedit_unicode, count: preedit_unicode.count)
         
-        PrintLog.shared.Log(log: "C:'\(commited)' - \(commited.count) P:'\(preediting)' - \(preediting.count)")
-        
         guard let disp = client as? IMKTextInput else { return }
         
         commited += additional
         
-        let build_count = 303
         if commited.count != 0 {
             disp.insertText(commited, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
-            PrintLog.shared.Log(log: "\(build_count) Commit: \(commited)")
         }
         
         if (preediting.count != 0) || (backspace == true) {
             let sr = NSRange(location: 0, length: preediting.count)
             let rr = NSRange(location: NSNotFound, length: NSNotFound)
-            PrintLog.shared.Log(log: "RR: \(rr) SR: \(sr) on \(String(describing: disp.bundleIdentifier()))")
             disp.setMarkedText(preediting, selectionRange: sr, replacementRange: rr)
-            PrintLog.shared.Log(log: "\(build_count) Predit: \(preediting)")
         }
     }
     
     override open func commitComposition(_ sender: Any!) {
-        PrintLog.shared.Log(log: "Commit Composition")
         self.hangul.Flush()
         self.update_display(client: sender)
     }
@@ -248,7 +248,6 @@ open class NavilIMEInputController: IMKInputController {
     }
     
     override open func mouseDown(onCharacterIndex index: Int, coordinate point: NSPoint, withModifier flags: Int, continueTracking keepTracking: UnsafeMutablePointer<ObjCBool>!, client sender: Any!) -> Bool {
-        PrintLog.shared.Log(log: "Mouse Down")
         if HanjaController.shared.isVisible {
             HanjaController.shared.hide()
         }
@@ -266,11 +265,7 @@ open class NavilIMEInputController: IMKInputController {
     }
 
     override open func candidateSelected(_ candidateString: NSAttributedString!) {
-        PrintLog.shared.Log(log: "candidateSelected: \(candidateString?.string ?? "nil")")
-        guard let client = self.client() as? IMKTextInput else {
-            PrintLog.shared.Log(log: "candidateSelected: client cast failed")
-            return
-        }
+        guard let client = self.client() as? IMKTextInput else { return }
         self.hangul.clearState()
         HanjaController.shared.select(candidate: candidateString.string, client: client)
     }
@@ -278,14 +273,9 @@ open class NavilIMEInputController: IMKInputController {
     override open func candidateSelectionChanged(_ candidateString: NSAttributedString!) {}
 
     @objc func select_menu(_ sender:Any?) {
-        guard let menuitem = sender as? Dictionary<String, Any> else {
-            PrintLog.shared.Log(log: "WTF \(sender.debugDescription)")
-            return
-        }
+        guard let menuitem = sender as? Dictionary<String, Any> else { return }
         if let kbd:NSMenuItem = menuitem["IMKCommandMenuItem"] as? NSMenuItem {
-            PrintLog.shared.Log(log: "Selected Keyboard: \(kbd.title)")
             if kbd.tag == OptHandler.shared.opt_menu_tag {
-                PrintLog.shared.Log(log: "This is Option: \(kbd.title)")
                 self.hangul.Flush()
                 OptHandler.shared.Open_opt_window(sender)
                 return
@@ -298,8 +288,6 @@ open class NavilIMEInputController: IMKInputController {
             self.hangul.Flush()
             self.hangul.Stop()
             self.hangul.Start(type: HangulMenu.shared.selected_keyboard)
-        } else {
-            PrintLog.shared.Log(log: "Not NSMenuItem????")
         }
     }
 }

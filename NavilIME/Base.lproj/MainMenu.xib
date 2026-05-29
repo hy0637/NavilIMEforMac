@@ -16,7 +16,6 @@
         <customObject id="Voe-Tx-rLC" customClass="AppDelegate" customModule="NavilIME" customModuleProvider="target">
             <connections>
                 <outlet property="dubul_no_shift_checkbox" destination="FsM-p3-Aao" id="JbW-6Y-JN7"/>
-                <outlet property="emacs_eng_checkbox" destination="DnV-SG-qn8" id="pPh-Rt-82e"/>
                 <outlet property="nothing_radio" destination="ejH-sn-zqu" id="ygS-wK-Rhn"/>
                 <outlet property="right_cmd" destination="fXG-ca-Nsa" id="t1y-nz-ntE"/>
                 <outlet property="right_opt" destination="aAq-eS-jsh" id="C71-da-gaW"/>
@@ -30,7 +29,7 @@
             <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
             <rect key="contentRect" x="335" y="390" width="474" height="523"/>
-            <rect key="screenRect" x="0.0" y="0.0" width="1440" height="875"/>
+            <rect key="screenRect" x="0.0" y="0.0" width="1920" height="1055"/>
             <view key="contentView" id="EiT-Mj-1SZ">
                 <rect key="frame" x="0.0" y="0.0" width="474" height="523"/>
                 <autoresizingMask key="autoresizingMask"/>
@@ -39,15 +38,15 @@
                         <rect key="frame" x="13" y="351" width="448" height="159"/>
                         <autoresizingMask key="autoresizingMask"/>
                         <clipView key="contentView" drawsBackground="NO" id="JVZ-Ji-tNK">
-                            <rect key="frame" x="0.0" y="0.0" width="448" height="159"/>
+                            <rect key="frame" x="0.0" y="0.0" width="433" height="159"/>
                             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                             <subviews>
                                 <textView importsGraphics="NO" richText="NO" verticallyResizable="YES" smartInsertDelete="YES" id="Qen-Ja-R88">
-                                    <rect key="frame" x="0.0" y="0.0" width="448" height="159"/>
+                                    <rect key="frame" x="0.0" y="0.0" width="433" height="159"/>
                                     <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                                     <color key="textColor" name="textColor" catalog="System" colorSpace="catalog"/>
                                     <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
-                                    <size key="minSize" width="448" height="159"/>
+                                    <size key="minSize" width="433" height="159"/>
                                     <size key="maxSize" width="448" height="10000000"/>
                                     <color key="insertionPointColor" name="textColor" catalog="System" colorSpace="catalog"/>
                                 </textView>
@@ -58,7 +57,7 @@
                             <autoresizingMask key="autoresizingMask"/>
                         </scroller>
                         <scroller key="verticalScroller" wantsLayer="YES" verticalHuggingPriority="750" horizontal="NO" id="ch7-5n-dLA">
-                            <rect key="frame" x="432" y="0.0" width="16" height="159"/>
+                            <rect key="frame" x="433" y="0.0" width="15" height="159"/>
                             <autoresizingMask key="autoresizingMask"/>
                         </scroller>
                     </scrollView>
@@ -70,24 +69,13 @@
                             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                             <subviews>
                                 <button verticalHuggingPriority="750" misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="FsM-p3-Aao">
-                                    <rect key="frame" x="18" y="49" width="404" height="18"/>
+                                    <rect key="frame" x="18" y="39" width="404" height="18"/>
                                     <buttonCell key="cell" type="check" title="ㄷㄷㄷ 입력켜기" bezelStyle="regularSquare" imagePosition="left" state="on" inset="2" id="9n4-8Z-Yzr">
                                         <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                         <font key="font" metaFont="system"/>
                                     </buttonCell>
                                     <connections>
                                         <action selector="opt_dubul_sel_no_shift:" target="Voe-Tx-rLC" id="K80-FB-nqa"/>
-                                    </connections>
-                                </button>
-                                <button verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="DnV-SG-qn8">
-                                    <rect key="frame" x="18" y="10" width="210" height="18"/>
-                                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Force English mode for Emacs" bezelStyle="regularSquare" imagePosition="left" state="on" inset="2" id="kk2-5C-Oji">
-                                        <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                        <font key="font" metaFont="system"/>
-                                    </buttonCell>
-                                    <connections>
-                                        <action selector="opt_emacs_eng:" target="Voe-Tx-rLC" id="KlQ-hB-kGM"/>
                                     </connections>
                                 </button>
                             </subviews>
@@ -168,11 +156,11 @@
                             <string key="title">  
     NavilIME Patch Version
 
-     * 패치내용
+     * 패치 주요 내용
 
-         - ㅅㅅ 연속 입력 받침 ㅆ
+         - 한자/기호 입력
 
-         - emacs 사용때 영어(en) 고정(옵션선택)
+         - emacs 사용 편의 추가
 </string>
                             <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
                             <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>

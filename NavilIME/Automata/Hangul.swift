@@ -19,9 +19,7 @@ struct Composition {
 }
 
 struct Automata {
-    // 현재 작업 중인 입력 시퀀스
     var current:[String]
-    // 키보드
     var keyboard:Keyboard
     
     init(kbd:Keyboard) {
@@ -31,20 +29,14 @@ struct Automata {
     
     func chosung(comp: inout Composition, ch:String) {
         if comp.chosung == "" {
-            // 초성 입력이 처음이면 채움
             comp.chosung = ch
         } else {
-            // 초성 입력이 이미 있는데
             if comp.jungsung != "" {
-                // 중성도 있으면 조합 종료
                 comp.done = true
             } else {
-                // 중성은 아직 없음
                 if self.keyboard.chosung_proc(comp: &comp, ch: ch) {
-                    // 쌍자음이면 채움
                     comp.chosung += ch
                 } else {
-                    // 쌍자음이 아니면 조합 종료
                     comp.done = true
                 }
             }
@@ -53,15 +45,11 @@ struct Automata {
 
     func jungsung(comp:inout Composition, ch:String) {
         if comp.jungsung == "" {
-            // 중성 입력이 처음이면 채움
             comp.jungsung = ch
         } else {
-            // 중성 입력이 이미 있으면 이중 모음인지 확인
             if self.keyboard.jungsung_proc(comp: &comp, ch: ch) {
-                // 이중 모음이면 채움
                 comp.jungsung += ch
             } else {
-                // 이중 모음이 아니면 조합 종료
                 comp.done = true
             }
         }
@@ -69,15 +57,11 @@ struct Automata {
 
     func jongsung(comp: inout Composition, ch:String) {
         if comp.jongsung == "" {
-            // 종성 입력이 처음이면 채움
             comp.jongsung = ch
         } else {
-            // 종성 입력이 이미 있으면 겹받침인지 확인
             if self.keyboard.jongsung_proc(comp: &comp, ch: ch) {
-                // 겹받침이면 채움
                 comp.jongsung += ch
             } else {
-                // 겹받침이 아니면 조합 종료
                 comp.done = true
             }
         }
@@ -93,25 +77,19 @@ struct Automata {
         var comp:Composition = Composition()
         
         for ch in self.current {
-            // 입력이 초성인가?
             if self.keyboard.chosung_proc(comp: &comp, ch: ch) {
                 self.chosung(comp: &comp, ch: ch)
-            // 입력이 중성인가?
             } else if self.keyboard.jungsung_proc(comp: &comp, ch: ch) {
                 self.jungsung(comp: &comp, ch: ch)
-            // 입력이 종성인가?
             } else if self.keyboard.jongsung_proc(comp: &comp, ch: ch) {
                 self.jongsung(comp:&comp, ch:ch)
-            // 허용하는 조합이 아니다. 글자를 완성하고 다음에 조합
             } else {
                 comp.done = true
             }
-            // 조합을 종료하면 더이상 진행하지 않음
             if comp.done {
                 break
             }
         }
-        // 현재까지 조립한 입력을 먹어치운다
         if comp.done {
             self.consume(comp: comp)
         }
@@ -119,23 +97,12 @@ struct Automata {
     }
 }
 
-// API
-// * 한글 오토마타를 시작
-//  * HangulStart(int type)
-// * 한글 오토마타를 종료
-//  * HangulStop()
-// * 한글 낱자를 하나씩 오토마타로 보냄
-//  * HangulProcess(ascii)
-// * 한글 낱자 단위로 지움
-//  * HangulBackspace()
-// * 현재 조합 중인 글자를 받음
-//  * HangulGetPreedit()
-// * 조합 완료된 글자를 받음
-//  * HangulGetCommit()
-// * 조합을 중지하고 현재 글자를 완료로 표시함
-//  * HangulFlush()
-// * 백스페이스
-//  * HangulBackspace()
+// 한글 입력 상태
+enum HangulState {
+    case hangul    // 한글 입력 중
+    case english   // 영문 모드
+    case sequence  // 멀티키 시퀀스 진행 중 (C-x p p 등)
+}
 
 class Hangul {
     var automata:Automata?
@@ -143,14 +110,16 @@ class Hangul {
     var committed:[unichar]
     var preediting:[unichar]
     
-    // 디버그용. Normalization 하지 않은 coposition 정보를 넣는다. 디버그할 때 편하다.
     var debug_commit:[String]
     var debug_preedit:[String]
+    
+    // 입력 상태
+    var state: HangulState = .hangul
+    var previousState: HangulState = .hangul  // 시퀀스 종료 후 복귀용
     
     init() {
         self.committed  = []
         self.preediting = []
-        
         self.debug_commit  = []
         self.debug_preedit = []
     }
@@ -168,7 +137,6 @@ class Hangul {
     func set_preedit(comp:Composition){
         if let kbd = self.keyboard {
             self.preediting += kbd.normalization(comp: comp, is_commit: false)
-            // 최신 preedit 문자열 저장 (GetPreedit 후에도 유지)
             currentPreedit = String(utf16CodeUnits: self.preediting, count: self.preediting.count)
             let dbg = kbd.debugout(comp: comp)
             if dbg != "" {
@@ -183,18 +151,41 @@ class Hangul {
     }
     
     func ToggleSuspend() {
-        HangulMenu.shared.self_eng_mode = !HangulMenu.shared.self_eng_mode
-        if HangulMenu.shared.self_eng_mode {
+        if state == .hangul {
+            state = .english
+            HangulMenu.shared.self_eng_mode = true
             PrintLog.shared.Log(log: "영어")
         } else {
+            state = .hangul
+            HangulMenu.shared.self_eng_mode = false
             PrintLog.shared.Log(log: "한글")
         }
     }
+
+    // 멀티키 시퀀스 시작 (C-x, C-c 등 수식키 입력 시)
+    func EnterSequence() {
+        if state != .sequence {
+            previousState = state
+            state = .sequence
+            PrintLog.shared.Log(log: "EnterSequence: previousState=\(previousState)")
+        }
+    }
+
+    // 멀티키 시퀀스 종료 → 이전 상태로 복귀
+    func ExitSequence() {
+        if state == .sequence {
+            state = previousState
+            // self_eng_mode도 이전 상태에 맞게 복원
+            HangulMenu.shared.self_eng_mode = (state == .english)
+            PrintLog.shared.Log(log: "ExitSequence: restored to \(state)")
+        }
+    }
+
+    // 시퀀스 중인지 확인
+    var isInSequence: Bool {
+        return state == .sequence
+    }
     
-    /*
-     입력기 프론트엔드에 한글 오토마타 엔진이 지원하는 자판 목록과 인스턴스를 전달함
-     여기에 자판 객체를 등록하면 나빌입력기 전체에서 다 참조해서 사용함
-     */
     static let hangul_keyboard:[Keyboard] = [
         Keyboard002()
     ]
@@ -203,47 +194,36 @@ class Hangul {
     }
     
     func Start(type:Int) {
-        // 일치하는 키보드가 없으면 002를 사용한다.
         self.keyboard = Hangul.hangul_keyboard[0]
-        
         for k in Hangul.hangul_keyboard {
             if k.id == type {
                 self.keyboard = k
             }
         }
-        
         self.automata = Automata(kbd: self.keyboard!)
+        self.state = .hangul
+        self.previousState = .hangul
+        HangulMenu.shared.self_eng_mode = false
     }
 
     func Process(ascii:String) -> Bool {
-        // 자체 영어 입력 모드 - 한글 오토마타를 잠시 중지하면 그게 영어 입력이다.
-        if HangulMenu.shared.self_eng_mode {
-            // 잠시 중지면 오토마타를 안돌림
+        // 영문 모드 또는 시퀀스 중 → 한글 처리 안 함
+        if state == .english || state == .sequence {
             return false
         }
-        
         // 한글인지 확인
         if self.keyboard?.is_hangul(ch: ascii) == false {
             return false
         }
-        // 키보드 입력 시간 델타 업데이트
         self.keyboard?.update_key_input_time_delta()
         PrintLog.shared.Log(log: "Key time delta \(String(describing: self.keyboard?.input_delta))")
-        
-        // 키보드가 눌릴 때 마다 한 글자씩 오토마타로 넣는다.
         self.automata!.current.append(ascii)
-        // 오토마타 돌린다.
         var comp:Composition = self.automata!.run()
-        // 조합 완료한 글자가 있다면?
         while comp.done {
-            // normalization 해서 commited 에 넣는다.
             self.set_commit(comp: comp)
-            // comp.done이 없을 때까지  오토마타를 돌린다.
             comp = self.automata!.run()
         }
-        // 조합 완료 안된 낱자는 preediting에 넣는다.
         self.set_preedit(comp: comp)
-        
         return true
     }
     
@@ -253,10 +233,8 @@ class Hangul {
     
     func Backspace() -> Bool {
         if self.automata!.current.count > 0 {
-            self.automata!.current.removeLast();
-            // 오토마타 돌린다.
+            self.automata!.current.removeLast()
             let comp:Composition = self.automata!.run()
-            // 조합 완료 안된 낱자는 preediting에 넣는다.
             self.set_preedit(comp: comp)
             return true
         }
@@ -264,17 +242,14 @@ class Hangul {
     }
 
     func Flush() {
-        // 오토마타를 돌리고
         let comp:Composition = self.automata!.run()
-        // 완성이됐건 말건 그냥 commit 해 버리고
         self.set_commit(comp: comp)
-        // 입력 버퍼를 비우면 flush!
         self.automata!.current = []
         currentPreedit = ""
     }
 
     var lastCommitted: String = ""
-    var currentPreedit: String = ""  // 최신 preedit 문자열 (GetPreedit 후에도 유지)
+    var currentPreedit: String = ""
 
     func GetPreedit() -> [unichar] {
         let ret:[unichar] = self.preediting
@@ -283,7 +258,6 @@ class Hangul {
         return ret
     }
 
-    // preedit 버퍼를 비우지 않고 현재 값만 반환
     func PeekPreedit() -> [unichar] {
         return self.preediting
     }
@@ -295,7 +269,6 @@ class Hangul {
         return ret
     }
 
-    // 한자 선택 후 상태 초기화
     func clearState() {
         self.automata?.current = []
         self.preediting = []

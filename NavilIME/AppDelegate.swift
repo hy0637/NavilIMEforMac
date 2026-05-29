@@ -25,7 +25,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 한영전환 - 오른쪽 opt
     @IBOutlet weak var right_opt: NSButton!
     // Emacs 영문 고정
-    @IBOutlet weak var emacs_eng_checkbox: NSButton!
     
     var server = IMKServer()
 
@@ -53,7 +52,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         OptHandler.shared.dubul_no_shift_checkbox = self.dubul_no_shift_checkbox
         
         // 옵션 윈도우 - Emacs 영문 고정 연결
-        OptHandler.shared.emacs_eng_checkbox = self.emacs_eng_checkbox
         // 옵션 윈도우 - 한영전환 옵션 연결
         OptHandler.shared.hotkeys.append(self.nothing_radio)
         OptHandler.shared.hotkeys.append(self.shift_space_radio)
@@ -76,9 +74,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    @IBAction func opt_emacs_eng(_ sender: NSButton) {
-        OptHandler.shared.Emacs_eng_mode(enabled: sender.state == .on)
-    }
 
     @IBAction func opt_set_hotkey(_ sender: NSButton) {
         let radio_tag = sender.tag
