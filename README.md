@@ -35,7 +35,6 @@
 - Fortunately, living in a good era — solved with the help of AI (Claude)
 
 ## Build
-Swift version 5 is required (Swift 6 causes build errors)
 ```bash
 cd ~/Project/NavilIMEforMac
 rm -rf ~/Library/Developer/Xcode/DerivedData/NavilIME-*
@@ -44,7 +43,6 @@ xcodebuild -project NavilIME.xcodeproj \
            -configuration Release \
            CODE_SIGN_IDENTITY="" \
            CODE_SIGNING_REQUIRED=NO \
-           SWIFT_VERSION=5 \
            ARCHS=arm64 \
            ONLY_ACTIVE_ARCH=NO \
            build 2>&1 | tail -3
