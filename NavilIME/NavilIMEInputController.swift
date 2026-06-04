@@ -235,6 +235,13 @@ open class NavilIMEInputController: IMKInputController {
         }
     }
     
+    override open func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
+        if let client = sender as? IMKTextInput {
+            client.overrideKeyboard(withKeyboardNamed: "com.apple.keylayout.ABC")
+        }
+        super.setValue(value, forTag: tag, client: sender)
+    }
+
     override open func commitComposition(_ sender: Any!) {
         self.hangul.Flush()
         self.update_display(client: sender)
