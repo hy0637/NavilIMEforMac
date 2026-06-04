@@ -235,6 +235,8 @@ open class NavilIMEInputController: IMKInputController {
         }
     }
     
+    // 포커스 전환 후 첫 글자 버그 수정 (구름입력기 방식 참고)
+    // NOTE: "com.apple.keylayout.ABC" 하드코딩 — Dvorak, Colemak 등 사용자는 수정 필요
     override open func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
         if let client = sender as? IMKTextInput {
             client.overrideKeyboard(withKeyboardNamed: "com.apple.keylayout.ABC")

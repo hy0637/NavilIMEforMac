@@ -28,6 +28,8 @@
 ## Known Limitations
 - After a multi-key sequence (e.g. `C-x p p`), Korean input mode must be manually restored via the Han/Eng toggle key
 - When in Korean composition state, the first modifier key press (e.g. `C-x`) confirms the current syllable; the shortcut requires a second press to execute
+- `overrideKeyboard` is hardcoded to `com.apple.keylayout.ABC`. 
+  Users with non-ABC keyboard layouts (Dvorak, Colemak, etc.) should modify this value in `NavilIMEInputController.swift`
 
 ## With the Help of AI
 - I am not a developer
