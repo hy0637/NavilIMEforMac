@@ -15,14 +15,10 @@ open class NavilIMEInputController: IMKInputController {
     var hangul:Hangul!
     // 멀티키 시퀀스 감지 카운터 (C-x p p 등 처리)
     var commandKeyCount: Int = 0
-    var wasHangulMode: Bool = false
-    var restorePending: Bool = false
     
     override open func activateServer(_ sender: Any!) {
         super.activateServer(sender)
         commandKeyCount = 0
-        wasHangulMode = false
-        restorePending = false
         self.hangul = Hangul()
         self.hangul.Start(type: HangulMenu.shared.selected_keyboard)
         
@@ -133,19 +129,9 @@ open class NavilIMEInputController: IMKInputController {
                let bundleID = client.bundleIdentifier(),
                bundleID == "org.gnu.Emacs" {
                 commandKeyCount += 1
-                restorePending = true
                 return false
             } else {
                 commandKeyCount = 0
-            }
-        }
-        // 시퀀스 완료 후 첫 키 입력 시 한글 복원
-        if restorePending {
-            restorePending = false
-            commandKeyCount = 0
-            if wasHangulMode {
-                HangulMenu.shared.self_eng_mode = false
-                wasHangulMode = false
             }
         }
         
