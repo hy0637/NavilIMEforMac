@@ -4,8 +4,15 @@
 //
 //  Created by Manwoo Yi on 9/4/22.
 //
+//  ============================================================
+//  Emacs 통합 전략 (2026-06)
+//  Emacs 활성화 시 시스템 입력기를 ABC로 전환 → NavilIME 완전 비활성화
+//  Emacs 내부 한글 입력은 사용자 Emacs 설정에 따름 (예: hy-hangul.el)
+//  다른 앱에서는 NavilIME가 한글 입력 담당
+//  ============================================================
 
 import InputMethodKit
+import Carbon
 
 @objc(NavilIMEInputController)
 open class NavilIMEInputController: IMKInputController {
@@ -18,15 +25,19 @@ open class NavilIMEInputController: IMKInputController {
         super.activateServer(sender)
         self.hangul = Hangul()
         self.hangul.Start(type: HangulMenu.shared.selected_keyboard)
-        
-        if OptHandler.shared.emacs_eng_mode {
-            if let client = sender as? IMKTextInput,
-               let bundleID = client.bundleIdentifier() {
-                let engModeApps = ["org.gnu.Emacs", "com.runningwithcrayons.Alfred"]
-                if engModeApps.contains(bundleID) {
-                    HangulMenu.shared.self_eng_mode = true
-                } else {
-                    HangulMenu.shared.self_eng_mode = false
+        // Emacs 활성화 시 ABC로 전환 → NavilIME 완전 비활성화
+        if let client = sender as? IMKTextInput,
+           let bundleID = client.bundleIdentifier(),
+           bundleID == "org.gnu.Emacs" {
+            if let sourceList = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
+                for source in sourceList {
+                    if let id = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
+                        let sourceID = Unmanaged<CFString>.fromOpaque(id).takeUnretainedValue() as String
+                        if sourceID == "com.apple.keylayout.ABC" {
+                            TISSelectInputSource(source)
+                            break
+                        }
+                    }
                 }
             }
         }
@@ -100,16 +111,6 @@ open class NavilIMEInputController: IMKInputController {
         }
         
         if flag.contains(.command) || flag.contains(.option) || flag.contains(.control) {
-            if OptHandler.shared.emacs_eng_mode,
-               let client = client as? IMKTextInput,
-               let bundleID = client.bundleIdentifier(),
-               bundleID == "org.gnu.Emacs" {
-                if HangulMenu.shared.self_eng_mode == false {
-                    HangulMenu.shared.self_eng_mode = true
-                    self.hangul.Flush()
-                    self.update_display(client: client)
-                }
-            }
             return false
         }
         
@@ -212,6 +213,15 @@ open class NavilIMEInputController: IMKInputController {
         }
     }
     
+    // 포커스 전환 후 첫 글자 버그 수정 (구름입력기 방식 참고)
+    // NOTE: "com.apple.keylayout.ABC" 하드코딩 — Dvorak, Colemak 등 사용자는 수정 필요
+    override open func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
+        if let client = sender as? IMKTextInput {
+            client.overrideKeyboard(withKeyboardNamed: "com.apple.keylayout.ABC")
+        }
+        super.setValue(value, forTag: tag, client: sender)
+    }
+
     override open func commitComposition(_ sender: Any!) {
         self.hangul.Flush()
         self.update_display(client: sender)

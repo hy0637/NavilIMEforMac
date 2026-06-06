@@ -6,39 +6,53 @@
 //
 //  ============================================================
 //  Emacs 통합 전략 (2026-06)
-//  Emacs 활성화 시 시스템 입력기를 ABC로 전환 → NavilIME 완전 비활성화
+//  Emacs 활성화 시 시스템 입력기를 영어(ASCII 호환)로 전환 → NavilIME 완전 비활성화
 //  Emacs 내부 한글 입력은 사용자 Emacs 설정에 따름 (예: hy-hangul.el)
 //  다른 앱에서는 NavilIME가 한글 입력 담당
 //  ============================================================
 
 import InputMethodKit
-import Carbon
+
+// MARK: - TIS(Text Input Services) Swift 확장
+// Carbon 프레임워크 임포트 없이 C API를 Swift 스타일로 안전하게 사용하기 위한 확장입니다.
+extension TISInputSource {
+    var id: String? {
+        guard let property = TISGetInputSourceProperty(self, "kTISPropertyInputSourceID" as CFString) else {
+            return nil
+        }
+        return Unmanaged<CFString>.fromOpaque(property).takeUnretainedValue() as String
+    }
+    
+    func select() {
+        TISSelectInputSource(self)
+    }
+}
 
 @objc(NavilIMEInputController)
 open class NavilIMEInputController: IMKInputController {
-    let key_code:String =       "asdfhgzxcv\tbqweryt123465=97-80]ou[ip\tlj'k;\\,/nm.\t `"
-    let shift_key_code:String = "ASDFHGZXCV\tBQWERYT!@#$^%+(&_*)}OU{IP\tLJ\"K:|<?NM>\t ~"
+    let _keyCode: String =       "asdfhgzxcv\tbqweryt123465=97-80]ou[ip\tlj'k;\\,/nm.\t `"
+    let _shiftKeyCode: String = "ASDFHGZXCV\tBQWERYT!@#$^%+(&_*)}OU{IP\tLJ\"K:|<?NM>\t ~"
     
-    var hangul:Hangul!
+    var hangul: Hangul!
     
     override open func activateServer(_ sender: Any!) {
         super.activateServer(sender)
         self.hangul = Hangul()
         self.hangul.Start(type: HangulMenu.shared.selected_keyboard)
-        // Emacs 활성화 시 ABC로 전환 → NavilIME 완전 비활성화
-        if let client = sender as? IMKTextInput,
-           let bundleID = client.bundleIdentifier(),
-           bundleID == "org.gnu.Emacs" {
-            if let sourceList = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
-                for source in sourceList {
-                    if let id = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
-                        let sourceID = Unmanaged<CFString>.fromOpaque(id).takeUnretainedValue() as String
-                        if sourceID == "com.apple.keylayout.ABC" {
-                            TISSelectInputSource(source)
-                            break
-                        }
-                    }
-                }
+        
+        // Emacs 활성화 시 ASCII 호환 입력기(ABC, Dvorak 등)로 전환 → NavilIME 완전 비활성화
+        guard let client = sender as? IMKTextInput,
+              let bundleID = client.bundleIdentifier(),
+              bundleID == "org.gnu.Emacs" else { return }
+        
+        // 현재 사용자의 기본 영어 입력 소스를 동적으로 찾아 전환 (없으면 기본 ABC로 폴백)
+        if let currentASCIISource = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue() {
+            currentASCIISource.select()
+        } else {
+            let properties = ["kTISPropertyInputSourceID" as CFString: "com.apple.keylayout.ABC" as CFString] as CFDictionary
+            if let sourceList = TISCreateInputSourceList(properties, true)?.takeRetainedValue() as? [TISInputSource],
+               let abcSource = sourceList.first {
+                abcSource.select()
             }
         }
     }
@@ -46,7 +60,7 @@ open class NavilIMEInputController: IMKInputController {
     override open func deactivateServer(_ sender: Any!) {
         super.deactivateServer(sender)
         self.hangul.Flush()
-        self.update_display(client: sender)
+        self.updateDisplay(client: sender)
         self.hangul.Stop()
     }
     
@@ -70,13 +84,13 @@ open class NavilIMEInputController: IMKInputController {
 
         if HanjaController.shared.isVisible {
             switch event.keyCode {
-            case 0x7B, 0x7C, 0x7D, 0x7E:
+            case 0x7B, 0x7C, 0x7D, 0x7E: // 방향키
                 HanjaController.shared.handleKey(event: event)
                 return true
-            case 0x24, 0x4C:
+            case 0x24, 0x4C: // Enter, Return
                 HanjaController.shared.handleKey(event: event)
                 return true
-            case 0x35:
+            case 0x35: // Escape
                 HanjaController.shared.hide()
                 return true
             default:
@@ -87,8 +101,8 @@ open class NavilIMEInputController: IMKInputController {
         
         switch event.type {
         case .keyDown:
-            let eaten = self.keydown_event_handler(event: event, client: sender)
-            if eaten == false {
+            let eaten = self.keydownEventHandler(event: event, client: sender)
+            if !eaten {
                 self.commitComposition(sender)
             }
             return eaten
@@ -100,13 +114,13 @@ open class NavilIMEInputController: IMKInputController {
         return false
     }
     
-    func keydown_event_handler(event:NSEvent, client:Any!) -> Bool {
+    func keydownEventHandler(event: NSEvent, client: Any!) -> Bool {
         let keycode = event.keyCode
         let flag = event.modifierFlags
         
         Hotfix.shared.add(keycode)
-        let is_matched = Hotfix.shared.check()
-        if is_matched == true {
+        let isMatched = Hotfix.shared.check()
+        if isMatched {
             return false
         }
         
@@ -114,19 +128,19 @@ open class NavilIMEInputController: IMKInputController {
             return false
         }
         
-        let enter_return = 0x24
+        let enterReturn = 0x24
         let tab = 0x30
-        if keycode == enter_return || keycode == tab {
+        if Int(keycode) == enterReturn || Int(keycode) == tab {
             self.hangul.Flush()
-            self.update_display(client: client)
+            self.updateDisplay(client: client)
             return false
         }
         
         let backspace = 0x33
-        if keycode == backspace {
+        if Int(keycode) == backspace {
             let remain = self.hangul.Backspace()
-            if remain == true {
-                self.update_display(client: client, backspace: true)
+            if remain {
+                self.updateDisplay(client: client, backspace: true)
             }
             return remain
         }
@@ -151,7 +165,7 @@ open class NavilIMEInputController: IMKInputController {
                 preeditMode = true
             } else {
                 self.hangul.Flush()
-                self.update_display(client: client)
+                self.updateDisplay(client: client)
                 targetStr = self.hangul.lastCommitted
                 preeditMode = false
             }
@@ -165,48 +179,48 @@ open class NavilIMEInputController: IMKInputController {
                 client: imkClient)
         }
         
-        if keycode >= self.key_code.count {
+        if Int(keycode) >= self._keyCode.count {
             self.hangul.Flush()
-            self.update_display(client: client)
+            self.updateDisplay(client: client)
             return false
         }
         
-        let ascii_idx = self.key_code.index(self.key_code.startIndex, offsetBy: Int(keycode))
-        var ascii = self.key_code[ascii_idx]
-        let shift:Bool = flag.contains(.shift)
-        if shift == true {
-            ascii = self.shift_key_code[ascii_idx]
+        let asciiIdx = self._keyCode.index(self._keyCode.startIndex, offsetBy: Int(keycode))
+        var ascii = self._keyCode[asciiIdx]
+        let isShift = flag.contains(.shift)
+        if isShift {
+            ascii = self._shiftKeyCode[asciiIdx]
         }
         
-        let is_hangul:Bool = self.hangul.Process(ascii: String(ascii))
-        if is_hangul == false {
+        let isHangul = self.hangul.Process(ascii: String(ascii))
+        if !isHangul {
             self.hangul.Flush()
-            var extra:String = String(ascii)
+            var extra = String(ascii)
             if let etc = hangul.Additional(ascii: String(ascii)) {
                 extra = etc
             }
-            self.update_display(client: client, backspace: false, additional: extra)
+            self.updateDisplay(client: client, backspace: false, additional: extra)
         } else {
-            self.update_display(client: client)
+            self.updateDisplay(client: client)
         }
         return true
     }
     
-    func update_display(client:Any!, backspace:Bool = false, additional:String = "") {
-        let commit_unicode:[unichar] = self.hangul.GetCommit()
-        let preedit_unicode:[unichar] = self.hangul.GetPreedit()
-        var commited:String = String(utf16CodeUnits:commit_unicode, count: commit_unicode.count)
-        let preediting:String = String(utf16CodeUnits: preedit_unicode, count: preedit_unicode.count)
+    func updateDisplay(client: Any!, backspace: Bool = false, additional: String = "") {
+        let commitUnicode = self.hangul.GetCommit()
+        let preeditUnicode = self.hangul.GetPreedit()
+        var committed = String(utf16CodeUnits: commitUnicode, count: commitUnicode.count)
+        let preediting = String(utf16CodeUnits: preeditUnicode, count: preeditUnicode.count)
         
         guard let disp = client as? IMKTextInput else { return }
         
-        commited += additional
+        committed += additional
         
-        if commited.count != 0 {
-            disp.insertText(commited, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
+        if !committed.isEmpty {
+            disp.insertText(committed, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
         }
         
-        if (preediting.count != 0) || (backspace == true) {
+        if !preediting.isEmpty || backspace {
             let sr = NSRange(location: 0, length: preediting.count)
             let rr = NSRange(location: NSNotFound, length: NSNotFound)
             disp.setMarkedText(preediting, selectionRange: sr, replacementRange: rr)
@@ -214,17 +228,22 @@ open class NavilIMEInputController: IMKInputController {
     }
     
     // 포커스 전환 후 첫 글자 버그 수정 (구름입력기 방식 참고)
-    // NOTE: "com.apple.keylayout.ABC" 하드코딩 — Dvorak, Colemak 등 사용자는 수정 필요
+    // 현재 사용자의 ASCII 자판(Dvorak, Colemak 등 포함)을 추적해 버그를 방지합니다.
     override open func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
         if let client = sender as? IMKTextInput {
-            client.overrideKeyboard(withKeyboardNamed: "com.apple.keylayout.ABC")
+            if let currentASCIISource = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+               let sourceID = currentASCIISource.id {
+                client.overrideKeyboard(withKeyboardNamed: sourceID)
+            } else {
+                client.overrideKeyboard(withKeyboardNamed: "com.apple.keylayout.ABC")
+            }
         }
         super.setValue(value, forTag: tag, client: sender)
     }
 
     override open func commitComposition(_ sender: Any!) {
         self.hangul.Flush()
-        self.update_display(client: sender)
+        self.updateDisplay(client: sender)
     }
     
     override open func recognizedEvents(_ sender: Any!) -> Int {
@@ -259,9 +278,9 @@ open class NavilIMEInputController: IMKInputController {
 
     override open func candidateSelectionChanged(_ candidateString: NSAttributedString!) {}
 
-    @objc func select_menu(_ sender:Any?) {
+    @objc func select_menu(_ sender: Any?) {
         guard let menuitem = sender as? Dictionary<String, Any> else { return }
-        if let kbd:NSMenuItem = menuitem["IMKCommandMenuItem"] as? NSMenuItem {
+        if let kbd = menuitem["IMKCommandMenuItem"] as? NSMenuItem {
             if kbd.tag == OptHandler.shared.opt_menu_tag {
                 self.hangul.Flush()
                 OptHandler.shared.Open_opt_window(sender)
@@ -269,9 +288,9 @@ open class NavilIMEInputController: IMKInputController {
             }
             HangulMenu.shared.change_selected_keyboard(id: kbd.tag)
             for mi in HangulMenu.shared.menu.items {
-                mi.state = NSControl.StateValue.off
+                mi.state = .off
             }
-            kbd.state = NSControl.StateValue.on
+            kbd.state = .on
             self.hangul.Flush()
             self.hangul.Stop()
             self.hangul.Start(type: HangulMenu.shared.selected_keyboard)
