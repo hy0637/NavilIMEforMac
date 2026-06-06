@@ -14,22 +14,26 @@
 - **ㄲ jongseong**: Added `"rr":Jongsung.Ssangkiyeok` for double-tap input
 - **Hanja & symbol conversion (F9)**: Press F9 while composing a Korean syllable to open a candidate popup. Select with mouse double-click or arrow keys + Enter. Press F9 again or ESC to dismiss. Powered by a JSON table ported from Emacs `hanja-util.el` (572 entries, covering both Hanja and special symbols). **Lazy loaded** — initialized only on first F9 press, keeping startup lightweight
 - **KO/EN status display**: Menu bar dropdown shows 🇰🇷 KO or 🔤 EN to indicate current input mode
-- **Emacs multi-key sequence fix**: Modifier key sequences like `C-x p p`, `C-c C-x f` no longer trigger Korean input. Implemented via `commandKeyCount` tracking using `flagsChanged` events — inspired by `(> (length (this-command-keys)) 1)` in Emacs input method API
+- **Emacs integration**: When Emacs gains focus, NavilIME automatically switches the system input source to ABC, completely yielding control to Emacs. Korean input inside Emacs is handled by the user's Emacs configuration (e.g. `hy-hangul.el`). This eliminates all modifier key sequence conflicts (`C-x p p`, `C-c C-x f`, etc.)
+- **First character bug fix**: Added `setValue(_:forTag:client:)` + `overrideKeyboard` workaround inspired by Gureum IME, resolving the occasional first-character failure after focus switch
 - **Crash defense**: Added `ensureHangulReady()` to handle cases where macOS calls `handle()` without prior `activateServer()`
 - **Lightweight build**: ARM64 only, 2-beolsik only, 3-beolsik layouts removed
 
 ## Hanja Conversion — Supported Apps
-- Emacs, Upnote, Safari, Chrome, TextEdit and most standard macOS apps
+- Upnote, Safari, Chrome, TextEdit and most standard macOS apps
 - iTerm2: limited support due to terminal IME constraints
 
 ## Options
 - **Han/Eng toggle key**: Choose from Shift+Space, Right Command, or Right Option
 
+## Emacs Usage
+NavilIME automatically steps aside when Emacs is active — no configuration needed.
+Korean input inside Emacs is entirely up to your Emacs setup.
+Recommended: use a built-in Emacs Korean input method such as `hy-hangul.el` or `korean-hangul`.
+
 ## Known Limitations
-- After a multi-key sequence (e.g. `C-x p p`), Korean input mode must be manually restored via the Han/Eng toggle key
-- When in Korean composition state, the first modifier key press (e.g. `C-x`) confirms the current syllable; the shortcut requires a second press to execute
-- `overrideKeyboard` is hardcoded to `com.apple.keylayout.ABC`. 
-  Users with non-ABC keyboard layouts (Dvorak, Colemak, etc.) should modify this value in `NavilIMEInputController.swift`
+- First character input after focus switch may occasionally fail (rare, Apple IMKit bug). Partially mitigated via `overrideKeyboard` workaround
+- `overrideKeyboard` is hardcoded to `com.apple.keylayout.ABC`. Users with non-ABC keyboard layouts (Dvorak, Colemak, etc.) should modify this value in `NavilIMEInputController.swift`
 
 ## With the Help of AI
 - I am not a developer

@@ -4,8 +4,15 @@
 //
 //  Created by Manwoo Yi on 9/4/22.
 //
+//  ============================================================
+//  Emacs 통합 전략 (2026-06)
+//  Emacs 활성화 시 시스템 입력기를 ABC로 전환 → NavilIME 완전 비활성화
+//  Emacs 내부 한글 입력은 사용자 Emacs 설정에 따름 (예: hy-hangul.el)
+//  다른 앱에서는 NavilIME가 한글 입력 담당
+//  ============================================================
 
 import InputMethodKit
+import Carbon
 
 @objc(NavilIMEInputController)
 open class NavilIMEInputController: IMKInputController {
@@ -13,16 +20,27 @@ open class NavilIMEInputController: IMKInputController {
     let shift_key_code:String = "ASDFHGZXCV\tBQWERYT!@#$^%+(&_*)}OU{IP\tLJ\"K:|<?NM>\t ~"
     
     var hangul:Hangul!
-    // 멀티키 시퀀스 감지 카운터 (C-x p p 등 처리)
-    var commandKeyCount: Int = 0
     
     override open func activateServer(_ sender: Any!) {
         super.activateServer(sender)
-        commandKeyCount = 0
         self.hangul = Hangul()
         self.hangul.Start(type: HangulMenu.shared.selected_keyboard)
-        
-
+        // Emacs 활성화 시 ABC로 전환 → NavilIME 완전 비활성화
+        if let client = sender as? IMKTextInput,
+           let bundleID = client.bundleIdentifier(),
+           bundleID == "org.gnu.Emacs" {
+            if let sourceList = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
+                for source in sourceList {
+                    if let id = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
+                        let sourceID = Unmanaged<CFString>.fromOpaque(id).takeUnretainedValue() as String
+                        if sourceID == "com.apple.keylayout.ABC" {
+                            TISSelectInputSource(source)
+                            break
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override open func deactivateServer(_ sender: Any!) {
@@ -45,7 +63,6 @@ open class NavilIMEInputController: IMKInputController {
     override open func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
         self.ensureHangulReady()
         if OptHandler.shared.Is_han_eng_changed(keycode: event.keyCode, modi: event.modifierFlags) {
-            commandKeyCount = 0
             self.hangul.ToggleSuspend()
             self.commitComposition(sender)
             return true
@@ -75,24 +92,7 @@ open class NavilIMEInputController: IMKInputController {
                 self.commitComposition(sender)
             }
             return eaten
-        case .flagsChanged:
-            // 수식키(Ctrl, Cmd, Option) 눌릴 때 멀티키 시퀀스 카운트 증가
-            if let client = sender as? IMKTextInput,
-               let bundleID = client.bundleIdentifier(),
-               bundleID == "org.gnu.Emacs" {
-                let flag = event.modifierFlags
-                if flag.contains(.control) || flag.contains(.command) || flag.contains(.option) {
-                    if commandKeyCount == 0 {
-                        // 처음 수식키 누를 때 조합 중인 글자 확정
-                        self.hangul.Flush()
-                        self.update_display(client: sender)
-                    }
-                    commandKeyCount += 1
-                }
-            }
-            return false
         case .leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .rightMouseUp, .rightMouseDragged:
-            commandKeyCount = 0
             self.commitComposition(sender)
         default:
             break
@@ -111,28 +111,7 @@ open class NavilIMEInputController: IMKInputController {
         }
         
         if flag.contains(.command) || flag.contains(.option) || flag.contains(.control) {
-            if let client = client as? IMKTextInput,
-               let bundleID = client.bundleIdentifier(),
-               bundleID == "org.gnu.Emacs" {
-                if commandKeyCount == 0 {
-                    self.hangul.Flush()
-                    self.update_display(client: client)
-                }
-                commandKeyCount += 1
-            }
             return false
-        }
-        
-        // commandKeyCount > 0 이면 멀티키 시퀀스 진행 중 → 한글 처리 안 함
-        if commandKeyCount > 0 {
-            if let client = client as? IMKTextInput,
-               let bundleID = client.bundleIdentifier(),
-               bundleID == "org.gnu.Emacs" {
-                commandKeyCount += 1
-                return false
-            } else {
-                commandKeyCount = 0
-            }
         }
         
         let enter_return = 0x24
@@ -199,7 +178,6 @@ open class NavilIMEInputController: IMKInputController {
             ascii = self.shift_key_code[ascii_idx]
         }
         
-        commandKeyCount = 0
         let is_hangul:Bool = self.hangul.Process(ascii: String(ascii))
         if is_hangul == false {
             self.hangul.Flush()
