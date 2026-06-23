@@ -3,18 +3,17 @@
 //  NavilIME
 //
 //  Created by Manwoo Yi on 9/4/22.
-//
+//  
 //  ============================================================
 //  Emacs 통합 전략 (2026-06)
 //  Emacs 활성화 시 시스템 입력기를 영어(ASCII 호환)로 전환 → NavilIME 완전 비활성화
 //  Emacs 내부 한글 입력은 사용자 Emacs 설정에 따름 (예: hy-hangul.el)
 //  다른 앱에서는 NavilIME가 한글 입력 담당
 //  ============================================================
-
+//
 import InputMethodKit
 
 // MARK: - TIS(Text Input Services) Swift 확장
-// Carbon 프레임워크 임포트 없이 C API를 Swift 스타일로 안전하게 사용하기 위한 확장입니다.
 extension TISInputSource {
     var id: String? {
         guard let property = TISGetInputSourceProperty(self, "kTISPropertyInputSourceID" as CFString) else {
@@ -40,28 +39,45 @@ open class NavilIMEInputController: IMKInputController {
         self.hangul = Hangul()
         self.hangul.Start(type: HangulMenu.shared.selected_keyboard)
         
-        // Emacs 활성화 시 ASCII 호환 입력기(ABC, Dvorak 등)로 전환 → NavilIME 완전 비활성화
-        guard let client = sender as? IMKTextInput,
-              let bundleID = client.bundleIdentifier(),
-              bundleID == "org.gnu.Emacs" else { return }
+        guard let client = sender as? IMKTextInput else { return }
         
-        // 현재 사용자의 기본 영어 입력 소스를 동적으로 찾아 전환 (없으면 기본 ABC로 폴백)
-        if let currentASCIISource = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue() {
-            currentASCIISource.select()
-        } else {
-            let properties = ["kTISPropertyInputSourceID" as CFString: "com.apple.keylayout.ABC" as CFString] as CFDictionary
-            if let sourceList = TISCreateInputSourceList(properties, true)?.takeRetainedValue() as? [TISInputSource],
-               let abcSource = sourceList.first {
-                abcSource.select()
+        // Emacs 활성화 시 ASCII 호환 입력기(ABC, Dvorak 등)로 전환 → NavilIME 완전 비활성화
+        if let bundleID = client.bundleIdentifier(), bundleID == "org.gnu.Emacs" { //
+            if let currentASCIISource = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue() {
+                currentASCIISource.select()
+            } else {
+                let properties = ["kTISPropertyInputSourceID" as CFString: "com.apple.keylayout.ABC" as CFString] as CFDictionary
+                if let sourceList = TISCreateInputSourceList(properties, true)?.takeRetainedValue() as? [TISInputSource],
+                   let abcSource = sourceList.first {
+                    abcSource.select()
+                }
             }
+            return
         }
+        
+        // [개선 포인트 1] 일반 앱 진입 직후, OS 단에서 입력기 자판 소스가 일시적으로 뒤엉키는 것을 차단
+        // 깨어나는 순간 클라이언트의 키보드 레이아웃 상태를 명시적으로 재설정합니다.
+        self.synchronizeKeyboardLayout(client: client)
     }
 
     override open func deactivateServer(_ sender: Any!) {
-        super.deactivateServer(sender)
-        self.hangul.Flush()
+        // [개선 포인트 2] 포커스를 잃고 떠나기 전, 기존 타이핑 상태 마감을 super보다 "먼저" 수행
+        if self.hangul != nil {
+            self.hangul.Flush()
+        }
         self.updateDisplay(client: sender)
-        self.hangul.Stop()
+        
+        // 클라이언트 텍스트 뷰에 빈 마크 문자를 임시 삽입하여 OS 입력 큐에 잔존하는 이벤트를 강제로 밀어내기(Flush) 함
+        if let client = sender as? IMKTextInput {
+            client.insertText("", replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
+        }
+        
+        if self.hangul != nil {
+            self.hangul.Stop()
+        }
+        
+        // 모든 잔여 버퍼 청소가 끝난 후 부모 서버 비활성화 호출
+        super.deactivateServer(sender)
     }
     
     // macOS가 activateServer 없이 handle을 호출하는 경우 대비
@@ -227,18 +243,23 @@ open class NavilIMEInputController: IMKInputController {
         }
     }
     
-    // 포커스 전환 후 첫 글자 버그 수정 (구름입력기 방식 참고)
-    // 현재 사용자의 ASCII 자판(Dvorak, Colemak 등 포함)을 추적해 버그를 방지합니다.
+    // 포커스 혹은 상태 태그 변경 시 호출 (기존 구름입력기 방식 핫픽스 유지 + 동기화 일원화)
     override open func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
         if let client = sender as? IMKTextInput {
-            if let currentASCIISource = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
-               let sourceID = currentASCIISource.id {
-                client.overrideKeyboard(withKeyboardNamed: sourceID)
-            } else {
-                client.overrideKeyboard(withKeyboardNamed: "com.apple.keylayout.ABC")
-            }
+            self.synchronizeKeyboardLayout(client: client)
         }
         super.setValue(value, forTag: tag, client: sender)
+    }
+
+    // [개선 포인트 3] 키보드 오버라이드 로직의 안전한 공통 함수화
+    // 시스템 런타임에서 유저의 ASCII 자판 상태를 안전하게 추출하여 클라이언트에 덮어씌웁니다.
+    private func synchronizeKeyboardLayout(client: IMKTextInput) {
+        if let currentASCIISource = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+           let sourceID = currentASCIISource.id {
+            client.overrideKeyboard(withKeyboardNamed: sourceID)
+        } else {
+            client.overrideKeyboard(withKeyboardNamed: "com.apple.keylayout.ABC")
+        }
     }
 
     override open func commitComposition(_ sender: Any!) {
