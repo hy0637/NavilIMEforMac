@@ -161,6 +161,7 @@ open class NavilIMEInputController: IMKInputController {
             return remain
         }
 
+
         // F9 → 한자/기호 변환
         if event.keyCode == 0x65 {
             if !HanjaController.shared.isReady,
@@ -174,27 +175,54 @@ open class NavilIMEInputController: IMKInputController {
             let imkClient = client as! IMKTextInput
             let preeditStr = self.hangul.currentPreedit
 
-            let targetStr: String
-            let preeditMode: Bool
+            var targetStr: String = ""
+            var preeditMode: Bool = true
+            var replacementRange = NSRange(location: NSNotFound, length: NSNotFound)
+
+            // Case 1: 현재 글자를 입력 중인 상태 (조합 중 preedit)
             if !preeditStr.isEmpty {
                 targetStr = preeditStr
                 preeditMode = true
-            } else {
+            } 
+            // Case 2: [hy-hangul 스타일] 이미 입력이 완료되어 커서 왼쪽에 글자가 있는 경우
+            else {
                 self.hangul.Flush()
                 self.updateDisplay(client: client)
-                targetStr = self.hangul.lastCommitted
-                preeditMode = false
+                
+                // 현재 텍스트 뷰의 커서 선택 영역을 획득
+                let selectedRange = imkClient.selectedRange()
+                
+                // 커서 바로 앞 1글자의 위치 범위를 계산 (위치가 유효하고 커서가 맨 앞이 아닐 때)
+                if selectedRange.location != NSNotFound && selectedRange.location > 0 {
+                    let targetRange = NSRange(location: selectedRange.location - 1, length: 1)
+                    
+                    // 클라이언트 앱으로부터 커서 앞 딱 1글자의 속성 문자열을 가져옴
+                    if let attributedStr = imkClient.attributedSubstring(from: targetRange) {
+                        targetStr = attributedStr.string
+                        preeditMode = false
+                        replacementRange = targetRange // 한자 선택 시 덮어쓸 주소 지정
+                    }
+                }
+                
+                // 만약 앱에서 문자열 획득을 지원하지 않는 경우, 입력기 내부 버퍼폴백을 사용
+                if targetStr.isEmpty {
+                    targetStr = self.hangul.lastCommitted
+                    preeditMode = false
+                }
             }
 
             guard !targetStr.isEmpty, let scalar = targetStr.unicodeScalars.last else {
                 return false
             }
+            
+            // 보강된 HanjaController로 주소값(replacementRange)과 함께 스칼라 전달
             return HanjaController.shared.handleScalar(
                 scalar: scalar,
                 preeditMode: preeditMode,
-                client: imkClient)
+                client: imkClient,
+                replacementRange: replacementRange)
         }
-        
+	        
         if Int(keycode) >= self._keyCode.count {
             self.hangul.Flush()
             self.updateDisplay(client: client)
